@@ -26,6 +26,14 @@ CREATE TABLE IF NOT EXISTS numbers (
   -- plain column and not a uniqueness constraint.
   campaign_sid  TEXT,
   messaging_service_sid TEXT,
+  -- Where transcripts and alerts for THIS line go. Each line can route to a
+  -- different address — a personal line and a business line rarely want the
+  -- same inbox. NULL falls back to OWNER_EMAIL.
+  notify_email  TEXT,
+  -- Email every inbound text on this line, not just voicemail. Off by default:
+  -- on a busy line it is unusable. Worth turning on for a low-traffic project
+  -- number you would otherwise forget to check.
+  email_texts   INTEGER NOT NULL DEFAULT 0,
   is_active     INTEGER NOT NULL DEFAULT 1,
   created_at    INTEGER NOT NULL
 );

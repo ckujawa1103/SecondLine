@@ -2,7 +2,7 @@
 
 import { now, randomToken, audit, formatPhone } from './util.js';
 import { twilioRest, fetchTwilioAsset, deleteTwilioAsset } from './twilio.js';
-import { notify } from './notify.js';
+import { notify, emailInboundMessage } from './notify.js';
 
 /* ---------- inbound ---------- */
 
@@ -23,7 +23,7 @@ export async function handleInboundMessage(req, env, params, ctx) {
   if (!messageSid || !from || !to) return emptyTwiml();
 
   const number = await env.DB.prepare(
-    'SELECT id, e164, label FROM numbers WHERE e164 = ? AND is_active = 1',
+    'SELECT id, e164, label, notify_email, email_texts FROM numbers WHERE e164 = ? AND is_active = 1',
   ).bind(to).first();
 
   // A message to a number we no longer own is not an error worth failing on —
@@ -70,12 +70,26 @@ export async function handleInboundMessage(req, env, params, ctx) {
   }
 
   if (!blocked) {
+    const fromLabel = thread.contact_name || formatPhone(from);
+
     ctx.waitUntil(notify(env, {
-      title: thread.contact_name || formatPhone(from),
+      title: fromLabel,
       body: body || (numMedia ? `${numMedia} attachment${numMedia > 1 ? 's' : ''}` : ''),
       tag: `thread-${thread.id}`,
       url: `/messages/${thread.id}`,
     }));
+
+    if (number.email_texts) {
+      ctx.waitUntil(
+        emailInboundMessage(env, {
+          to: number.notify_email,
+          lineLabel: number.label,
+          fromLabel,
+          body,
+          threadUrl: `${(env.APP_BASE_URL || '').replace(/\/+$/, '')}/messages/${thread.id}`,
+        }).catch((e) => audit(env.DB, 'email_text_failed', String(e))),
+      );
+    }
   }
 
   // Empty TwiML: acknowledge without auto-replying. Anything else here would

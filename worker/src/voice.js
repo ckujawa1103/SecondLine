@@ -4,7 +4,7 @@
 import { now, randomToken, audit, formatPhone, clampInt } from './util.js';
 import { twiml, escapeXml, fetchTwilioAsset, deleteTwilioAsset, twilioRest } from './twilio.js';
 import { transcribe } from './transcribe.js';
-import { notify } from './notify.js';
+import { notify, notifyNewVoicemail } from './notify.js';
 
 /* ---------- inbound ---------- */
 
@@ -202,11 +202,22 @@ async function ingestRecording(env, { callSid, recordingSid, recordingUrl, durat
     if (recordingSid) await deleteTwilioAsset(env, `/Recordings/${recordingSid}.json`);
 
     const label = await contactLabel(env, call.peer_number, call.peer_name);
-    await notify(env, {
-      title: `Voicemail from ${label}`,
-      body: transcript ? transcript.slice(0, 180) : `${duration}s message — transcript pending`,
-      tag: `vm-${vmId}`,
-      url: `/voicemail/${vmId}`,
+
+    // Which line took the call decides where the transcript is emailed. A
+    // personal line and a business line route to different inboxes, so the
+    // recipient is a property of the number, not of the account.
+    const line = await env.DB.prepare(
+      'SELECT label, notify_email FROM numbers WHERE id = ?',
+    ).bind(call.number_id).first();
+
+    await notifyNewVoicemail(env, {
+      id: vmId,
+      from: call.peer_number,
+      fromLabel: label,
+      duration,
+      transcript,
+      notifyEmail: line?.notify_email || null,
+      lineLabel: line?.label || null,
     });
   } catch (e) {
     await audit(env.DB, 'ingest_failed', { callSid, error: String(e) });

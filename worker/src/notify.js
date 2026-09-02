@@ -30,7 +30,7 @@ export async function notifyNewVoicemail(env, vm) {
         ? vm.transcript.slice(0, 180)
         : `${vm.duration}s message — transcript pending`,
       tag: `vm-${vm.id}`,
-      url: `${appBase(env)}/#/vm/${vm.id}`,
+      url: `${appBase(env)}/voicemail/${vm.id}`,
     }),
     sendVoicemailEmail(env, vm),
   ]);
@@ -55,6 +55,40 @@ export async function notify(env, { title, body, tag, url }) {
     // Never let a notification failure break the path that produced it.
     await audit(env.DB, 'notify_failed', String(e));
   }
+}
+
+/**
+ * Email an inbound text.
+ *
+ * Only fires for lines with email_texts set, because a mail per message is
+ * noise on anything busy. The use it exists for: a line you cannot watch
+ * directly — a project number you rarely open, or a SIM that is not currently
+ * the active one in your phone.
+ */
+export async function emailInboundMessage(env, { to, lineLabel, fromLabel, body, threadUrl }) {
+  if (!env.RESEND_API_KEY) return;
+  const text = body || '(no text — attachment only)';
+
+  await sendViaResend(env, {
+    to,
+    subject: lineLabel ? `[${lineLabel}] Text from ${fromLabel}` : `Text from ${fromLabel}`,
+    text: `${fromLabel}:\n\n${text}\n\nReply: ${threadUrl}`,
+    html:
+      '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:560px">' +
+        `<div style="font-size:16px;font-weight:600;margin-bottom:12px">${escapeHtml(fromLabel)}</div>` +
+        '<div style="background:#f6f8f6;border-radius:10px;padding:16px;line-height:1.6;' +
+          `font-size:15px;white-space:pre-wrap">${escapeHtml(text)}</div>` +
+        `<a href="${escapeHtml(threadUrl)}" style="display:inline-block;margin-top:20px;` +
+          'background:#16a34a;color:#fff;padding:11px 22px;border-radius:8px;' +
+          'text-decoration:none;font-weight:600">Reply</a>' +
+      '</div>',
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[<>&"]/g, (c) => (
+    { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]
+  ));
 }
 
 /* ------------------------------------------------------------------ */
@@ -85,7 +119,7 @@ async function callAppsScript(env, payload) {
  * own Gmail. For magic links alone nothing sensitive transits: the mail says
  * "here is a sign-in link", the token is single-use and expires in 15 minutes.
  */
-async function sendViaResend(env, { subject, text, html }) {
+async function sendViaResend(env, { subject, text, html, to }) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -94,7 +128,8 @@ async function sendViaResend(env, { subject, text, html }) {
     },
     body: JSON.stringify({
       from: env.RESEND_FROM || 'Voicemail <onboarding@resend.dev>',
-      to: [env.OWNER_EMAIL],
+      // Per-line recipient when the caller supplied one, else the account owner.
+      to: [to || env.OWNER_EMAIL],
       subject,
       text,
       html,
@@ -117,10 +152,13 @@ async function sendVoicemailEmail(env, vm) {
 
   const received = new Date(vm.receivedAt ? vm.receivedAt * 1000 : Date.now());
   const transcript = vm.transcript || 'Transcript not available yet — open the app to listen.';
-  const appUrl = `${appBase(env)}/#/vm/${vm.id}`;
+  const appUrl = `${appBase(env)}/voicemail/${vm.id}`;
 
   await sendViaResend(env, {
-    subject: `Voicemail from ${vm.fromLabel}`,
+    to: vm.notifyEmail,
+    subject: vm.lineLabel
+      ? `[${vm.lineLabel}] Voicemail from ${vm.fromLabel}`
+      : `Voicemail from ${vm.fromLabel}`,
     text: [
       `${vm.fromLabel} left you a ${formatDuration(vm.duration)} voicemail.`,
       '',
@@ -162,11 +200,13 @@ async function sendVoicemailEmailViaAppsScript(env, vm) {
   await callAppsScript(env, {
     kind: 'voicemail',
     id: vm.id,
+    to: vm.notifyEmail,
+    lineLabel: vm.lineLabel,
     from: vm.from,
     fromLabel: vm.fromLabel,
     duration: vm.duration,
     transcript: vm.transcript,
-    appUrl: `${appBase(env)}/#/vm/${vm.id}`,
+    appUrl: `${appBase(env)}/voicemail/${vm.id}`,
     receivedAt: now(),
   });
 }
