@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Port a number into Twilio: check, submit, watch.
 //
+//   node scripts/port.mjs lookup   [+1815...]   carrier of record + line type
 //   node scripts/port.mjs check    [+1815...]   portability lookup, read-only
 //   node scripts/port.mjs submit               upload doc + create port-in
 //   node scripts/port.mjs status               poll the request
@@ -21,6 +22,7 @@ import { basename } from 'node:path';
 
 const NUMBERS = 'https://numbers.twilio.com/v1';
 const UPLOAD = 'https://numbers-upload.twilio.com/v1';
+const LOOKUPS = 'https://lookups.twilio.com/v2';
 
 const INFO_PATH = new URL('../port-info.json', import.meta.url);
 const STATE_PATH = new URL('../port-state.json', import.meta.url);
@@ -96,6 +98,46 @@ async function check(argv) {
       console.log('  -> this is an account-to-account move. Confirm the path with');
       console.log('     porting@twilio.com before submitting anything.');
     }
+  }
+  console.log();
+}
+
+/* ---------- lookup ---------- */
+
+/**
+ * What the gaining carrier's porting system will see.
+ *
+ * A wireless port-in of a number flagged VoIP is legal — the FCC requires
+ * intermodal porting — but carriers reject on their own policy, and that is
+ * the most likely reason the 2025 Mint attempt died. Worth $0.005 to know
+ * before a rejection costs a week.
+ */
+async function lookup(argv) {
+  const info = await loadInfo({ optional: true });
+  const number = argv[0] || info?.phone_number;
+  if (!number) die('Pass a number, or set phone_number in port-info.json.');
+
+  const r = await api(
+    'GET',
+    `${LOOKUPS}/PhoneNumbers/${encodeURIComponent(number)}?Fields=line_type_intelligence,caller_name`,
+  );
+
+  const line = r.line_type_intelligence || {};
+
+  console.log(`\n  ${r.phone_number}  ${r.national_format || ''}`);
+  console.log(`  valid            ${r.valid ? 'yes' : 'NO'}`);
+  console.log(`  carrier          ${line.carrier_name || 'unknown'}`);
+  console.log(`  line type        ${line.type || 'unknown'}`);
+  if (r.caller_name?.caller_name) console.log(`  CNAM             ${r.caller_name.caller_name}`);
+  if (line.error_code) console.log(`  lookup error     ${line.error_code}`);
+
+  // fixedVoip / nonFixedVoip is the flag that makes wireless carriers balk.
+  if (line.type && String(line.type).toLowerCase().includes('voip')) {
+    console.log('\n  Flagged VoIP. A wireless port-in is legal but carrier policy');
+    console.log('  decides. Submit the losing carrier CSR values EXACTLY — the');
+    console.log('  subscriber name, address and ZIP on the port form must match the');
+    console.log('  carrier of record above, not your own name and home address.');
+    console.log('  A mismatch here is an automatic rejection. See docs/PORTING.md.');
   }
   console.log();
 }
@@ -238,10 +280,10 @@ function die(msg) {
 /* ---------- main ---------- */
 
 const [cmd, ...argv] = process.argv.slice(2);
-const commands = { check, submit, status };
+const commands = { lookup, check, submit, status };
 
 if (!commands[cmd]) {
-  console.error('\n  usage: node scripts/port.mjs <check|submit|status>\n');
+  console.error('\n  usage: node scripts/port.mjs <lookup|check|submit|status>\n');
   process.exit(1);
 }
 

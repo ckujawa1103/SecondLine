@@ -1,31 +1,33 @@
 # SecondLine
 
-A second phone line you own: texts, calls, and transcribed voicemail, on a
-number ported to Twilio.
-
-Replaces a $13.79/month GoDaddy Conversations subscription with about $3.15/month
-of infrastructure — and, more to the point, replaces a second line that stopped
-being able to send texts.
+A phone number per project, on Twilio: texts, calls, and transcribed voicemail,
+managed from one app.
 
 ---
 
 ## Why this exists
 
-GoDaddy SmartLine (now Conversations) gave a second number without a second
-phone. Then US carriers made A2P 10DLC registration mandatory for texting from
-any non-mobile number, SmartLine started requiring business details to send a
-reply, and a number used as a personal line has none to give.
+This started as a replacement for GoDaddy SmartLine, which had stopped being
+able to send texts without business details a personal number does not have.
+Building that on Twilio turned out to be the wrong shape, for two reasons found
+while verifying:
 
-Porting to Mint Mobile was the obvious escape and it failed — mobile carriers
-routinely refuse inbound ports of VoIP numbers.
+**Twilio closed Group MMS to new accounts in March 2022.** Existing accounts are
+grandfathered; new ones get an error, with no published path in. Group texting
+on a Twilio number was never going to work.
 
-The thing worth understanding: **10DLC is a carrier mandate, not a GoDaddy
-policy.** Changing providers does not escape it. What does escape it is Twilio's
-**Sole Proprietor** brand, which is designed for individuals with no EIN: name,
-address, email, and a one-time code to a real mobile number. No business, no tax
-ID, no job title.
+**10DLC is the wrong category for a personal line.** Registering yourself as a
+business brand to text friends caps throughput and attaches unsubscribe
+handling to ordinary conversations.
 
-So: register as a sole proprietor, port the number to Twilio, and own the stack.
+So the personal number goes to a real mobile carrier as a second eSIM, where
+group texts, iMessage, and RCS all work natively and no registration exists —
+see [docs/PORTING.md](docs/PORTING.md).
+
+What is left is the part that genuinely wants software: **a number per
+project.** Each app gets its own Twilio number with its own inbox, voicemail,
+and transcripts, all in one place. That is A2P messaging, where 10DLC is the
+correct category rather than an imposition.
 
 ## What it does
 
@@ -42,27 +44,32 @@ So: register as a sole proprietor, port the number to Twilio, and own the stack.
 
 | | |
 |---|---|
-| Twilio number | $1.15/mo |
-| A2P 10DLC campaign | $2.00/mo (+$19 one-time) |
+| Twilio number, per project | $1.15/mo |
+| A2P 10DLC campaign | ~$11/mo, shared across every number |
 | SMS | ~$0.011 per message, either direction |
 | Voice | ~$0.0085/min inbound, ~$0.014/min outbound |
 | Transcription | ~$0.0062/min |
 | Cloudflare Workers, D1, R2 | $0 (free tier) |
 
-**~$3.15/month fixed**, $4–6 with real use, against $13.79 today.
+The campaign fee is per campaign, not per number, so the marginal cost of the
+second and third project number is $1.15 each.
 
 ## Porting
 
 **[→ docs/PORTING.md](docs/PORTING.md)**
 
-Read it before touching anything. The short version: GoDaddy Conversations turns
-out to run on Twilio, so this is a move within one carrier rather than a port
-between two, and the first step is a question to Twilio's porting team rather
-than a form. Getting that order wrong is what burned the previous attempt's
-30-day unlock window.
+Covers both tracks: moving (815) 287-0166 to a US Mobile eSIM on Verizon, and
+registering app numbers on Twilio under a Standard A2P brand.
+
+The short version for the 815 line: the number is flagged VoIP because GoDaddy
+Conversations runs on Twilio, and its Customer Service Record names a different
+subscriber entirely. Submitting your own name and ZIP on the port form is an
+automatic rejection — which is the most likely reason the 2025 Mint attempt
+failed.
 
 ```bash
-npm run port:check     # portability lookup — free, read-only, safe to repeat
+npm run port:lookup    # carrier of record + line type, ~$0.005
+npm run port:check     # portability into Twilio — free, read-only
 npm run port:submit    # upload proof, create the request, email the LOA
 npm run port:status    # watch it
 npm run a2p:status     # watch 10DLC approval
@@ -102,3 +109,7 @@ pieces (`auth.js`, `util.js`, `transcribe.js`, `notify.js` are carried over
 close to verbatim) and serves its own app from the Worker on a single origin,
 which removes the GitHub Pages, CORS, and WebAuthn RP-ID traps documented in
 that project's session log.
+
+The schema is multi-number from the first migration. That is the whole point of
+registering as a business rather than a sole proprietor: a Sole Proprietor A2P
+brand is capped at exactly one phone number, forever.

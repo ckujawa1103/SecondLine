@@ -1,16 +1,77 @@
-# Porting (815) 287-0166 out of GoDaddy Conversations
+# Porting (815) 287-0166 to US Mobile
 
 This repository is **public**. The port-out PIN, the GoDaddy customer number,
-and the service address are deliberately *not* written down here. They live in
-two emails in the owner's Gmail, cited below by subject line, and in the
-`port-info.json` file that `.gitignore` excludes.
+and the service address are deliberately not written down here. They live in
+two emails in the owner's Gmail, cited below by subject line, and in
+`port-info.json`, which `.gitignore` excludes.
 
 ---
 
-## The finding that changes everything
+## Two tracks, different destinations
 
-GoDaddy released a Customer Service Record for this number on 8 May 2025. The
-subscriber of record on it is not GoDaddy:
+The plan split once it became clear that a personal line and an app line want
+opposite things.
+
+| | **(815) 287-0166** | **App numbers** |
+|---|---|---|
+| Destination | US Mobile, Warp (Verizon) | Twilio |
+| Becomes | A real mobile line, eSIM | VoIP, API-controlled |
+| Messaging class | P2P — no registration at all | A2P — 10DLC required |
+| Group texts, iMessage, RCS | Native | Not available |
+| Registration | None | LLC + EIN, Standard brand |
+
+The 815 number stops being a software problem and becomes a second eSIM on the
+owner's handset, on Verizon rather than Mint's T-Mobile, which also buys network
+redundancy. Everything in this repository then serves the *app* numbers.
+
+### Why not keep it on Twilio
+
+Two independent reasons, either sufficient:
+
+**Group MMS is closed.** Twilio limited Group MMS to existing accounts on
+15 March 2022. Accounts created after that get an error, and the changelog
+states no timeline and no process for gaining access. A new Twilio account
+cannot do group texting at all — and the owner uses group texts on this number
+daily.
+
+**10DLC is the wrong category.** Registering a personal line as a business
+brand to text friends is a category error, and it caps throughput, requires
+campaign registration, and attaches business-message affordances like
+unsubscribe handling to ordinary conversations.
+
+A consumer mobile line has none of these problems because it is P2P.
+
+---
+
+## The obstacle: the number is flagged VoIP
+
+Every US number carries a line type — mobile, landline, or VoIP — in the
+national database. This one is VoIP, because GoDaddy Conversations is itself
+built on Twilio.
+
+FCC rules require intermodal porting, so VoIP-to-wireless is legal and carriers
+must honor it. In practice individual carriers reject on their own policy, and
+**that is almost certainly what killed the 2025 Mint attempt** — Mint is a
+T-Mobile MVNO and mobile carriers routinely refuse inbound VoIP ports.
+
+US Mobile is the chosen destination specifically because their porting guide
+lists VoIP sources — Google Voice, magicJack, Vonage, netTALK, Line2 — as
+routine cases with documented instructions, rather than treating them as
+exceptions.
+
+Confirm what the gaining carrier will see before submitting anything:
+
+```bash
+npm run port:lookup
+```
+
+Costs about half a cent and reports the carrier of record and line type
+straight from the database the porting system reads.
+
+## The likely second cause, and the fix
+
+GoDaddy's 2025 email was explicit that the underlying carrier wants the
+Customer Service Record submitted **exactly**:
 
 ```
 Company name: Twilio Inc
@@ -18,176 +79,129 @@ Address:      548 Market St #14510, San Francisco, CA 94104
 PIN:          (see email — not recorded here)
 ```
 
-**GoDaddy Conversations is itself built on Twilio.** The number already lives on
-Twilio's network, inside GoDaddy's Twilio account.
+A port form filled in with the owner's own name and Wilmette address does not
+match that record, and a mismatch is an automatic rejection. Filling in your
+own details is the natural thing to do and it is wrong here.
 
-Two consequences, and they point in opposite directions:
+**On the US Mobile port form, the billing ZIP is 94104, not the owner's.** That
+single field may be the entire difference between this attempt and the last one.
 
-**Good:** this is a VoIP-to-VoIP move within one carrier's footprint, not a
-VoIP-to-wireless port. It avoids the class of rejection that most likely killed
-the 2025 Mint attempt — mobile carriers routinely refuse inbound ports of VoIP
-numbers, and Mint is a T-Mobile MVNO.
-
-**Awkward:** a standard port-in assumes the losing carrier is somebody else.
-Twilio's own guidance is that numbers already hosted on Twilio and moving
-between unrelated Twilio accounts are handled by the porting team directly,
-not by the self-serve Port In API. Twilio also documents that the API "cannot
-transfer existing Twilio numbers between accounts."
-
-So the first move is a question to Twilio, not a form.
-
----
-
-## Why the 2025 attempt failed, most likely
-
-The record shows this sequence:
-
-| Date | Event |
-|---|---|
-| 7 May 2025 | Port-out code requested from `portout@vms.godaddy.com` |
-| 7 May 2025 | "Number Unlock Request Received" — 1–3 business days quoted |
-| 8 May 2025 | "Port Out Request Complete" — number eligible, CSR released |
-| 13 May 2025 | Mint ticket L2403307 sent back to GoDaddy |
-| — | No completion email. Number is still on Conversations today. |
-
-Two plausible causes, not mutually exclusive:
-
-1. **Mint refused a VoIP number.** The common case, and unfixable at Mint.
-2. **The LOA did not match the CSR.** GoDaddy's email is explicit that the
-   carrier wants "Twilio Inc" and the San Francisco address submitted *exactly*
-   as the current subscriber. A port form filled in with the owner's own name
-   and home address mismatches the record and gets rejected.
-
-The second one matters for us too. Whatever we submit has to carry the CSR
-values, not the owner's — while the supporting bill will show the owner's name.
-That tension is exactly what the Twilio question below needs to resolve.
-
-**The unlock window has long since expired.** GoDaddy re-locks a number 30 days
-after unlocking, and that was sixteen months ago. A fresh unlock is required.
+GoDaddy also stated there is no specific account number for porting out, and
+that the GoDaddy customer number should be used instead. It is on every renewal
+receipt.
 
 ---
 
 ## Order of operations
 
-The 2025 attempt burned its 30-day window waiting on a carrier. Do not repeat
-that. **Ask Twilio first; unlock second; submit immediately.**
+The 2025 attempt unlocked the number first, then went looking for a carrier, and
+let the 30-day eligibility window lapse unused. Carrier first, then unlock, then
+submit immediately.
 
-### Step 1 — Ask Twilio how they want this done · owner + agent
+### Step 1 — Pick the plan · owner
 
-Open a case with `porting@twilio.com` before touching GoDaddy. State plainly:
-the number, that the CSR names Twilio Inc as subscriber of record, that it is a
-GoDaddy Conversations line, and ask whether they want
+US Mobile, Warp (Verizon). Warp is the point: Mint runs on T-Mobile, so putting
+this line on Verizon means one dead network never takes out both. US Mobile can
+switch a line between Warp, Dark Star (AT&T), and Light Speed (T-Mobile) later,
+so this is reversible.
 
-- a standard Port In request carrying the CSR values, or
-- an internal account-to-account transfer, or
-- a hosted-number arrangement.
+Buy the plan but **do not** let it assign a new number if the flow offers to —
+choose the transfer path so the port is attached from the start.
 
-Also ask **what proof-of-ownership document they will accept**, given the
-monthly GoDaddy renewal receipt shows the owner's name while the CSR shows
-Twilio's. Getting this answer in writing before submitting is the single
-highest-value step in the whole process.
-
-Nothing else in this runbook should start until this is answered.
-
-### Step 2 — Re-request the unlock from GoDaddy · owner
-
-One line, from the Gmail address on the account, to `portout@vms.godaddy.com`.
-A draft is prepared; see the 2025 thread for the exact wording that worked.
-Expect 1–3 business days and a fresh CSR email.
-
-Do this only once Step 1 has an answer, so the 30-day clock starts against a
-plan rather than against a question.
-
-### Step 3 — Check portability · agent
+### Step 2 — Preflight · agent
 
 ```bash
-npm run port:check
+npm run port:lookup
 ```
 
-Hits Twilio's Portability API and reports whether the number is portable, its
-number type, and whether it already sits in a Twilio account. Read-only, free,
-and safe to run repeatedly — run it before and after the unlock to confirm the
-unlock actually landed.
+Confirms carrier of record and line type. Expect VoIP. That is not a blocker,
+it is the thing that tells us to submit CSR values rather than personal ones.
 
-### Step 4 — Submit · agent, with one click from the owner
+### Step 3 — Unlock the number · owner
 
-```bash
-npm run port:submit
-```
+One line to `portout@vms.godaddy.com` from the Gmail address on the account.
+The draft is already prepared; the 2025 wording that worked was simply asking
+for a port-out code for the number.
 
-Uploads the proof-of-ownership document, builds the port-in request from
-`port-info.json`, and submits it. Twilio emails an electronic LOA to the
-authorized representative for signature — **that click is the owner's and cannot
-be automated.** The port does not move until it is signed.
+Expect an acknowledgement within minutes and the CSR email in 1–3 business days.
+**The unlock expires after 30 days**, so send this only once the US Mobile
+account is ready to receive the port.
 
-### Step 5 — Watch it · agent
+### Step 4 — Submit the port · owner
 
-```bash
-npm run port:status
-```
+In the US Mobile app or web flow, using values from the fresh CSR email, not
+from memory and not from this file:
 
-Statuses are `pending`, `in-progress`, `waiting-for-signature`,
-`action-required`, `completed`, `expired`, `canceled`. `action-required` means
-the losing carrier rejected something and the reason text is the whole story —
-usually a name or address mismatch against the CSR.
+| Field | Value |
+|---|---|
+| Number | (815) 287-0166 |
+| Account number | GoDaddy customer number, from any renewal receipt |
+| Transfer PIN | From the CSR email |
+| Account holder name | **The CSR company name, not the owner's** |
+| Billing address / ZIP | **The CSR address, ZIP 94104** |
 
-Twilio requires a minimum of 7 days' notice, so a realistic total is 2–4 weeks
-from Step 1.
+If the form rejects a company name because it expects an individual, that is the
+moment to open a US Mobile support chat rather than guessing — tell them the
+number is a VoIP line whose CSR names a different subscriber, and give them the
+CSR verbatim. Guessing produces a rejection and another week.
 
-### Step 6 — Only now, cancel Conversations · owner
+### Step 5 — Watch for rejection · owner + agent
 
-GoDaddy's own warning, verbatim: *"Porting away a number does not automatically
+Wireless ports usually complete within one business day; VoIP-sourced ports run
+longer. A rejection comes back with a reason code, and the reason is nearly
+always a field mismatch against the CSR. Send it over and it can be diagnosed
+against the record above.
+
+### Step 6 — Only then, cancel GoDaddy · owner
+
+GoDaddy's warning, verbatim: *"Porting away a number does not automatically
 cancel it from your account. You will want to keep your plan active until the
 number has fully ported. Canceled Conversations plans cannot be restored and
 your port can be rejected by the carrier for being a canceled/inactive
 number."*
 
-Once calls and texts are confirmed arriving at SecondLine, call GoDaddy at
-**480-366-3550** to remove the number. Cancelling early loses the number
-permanently. At $13.79/month, one extra month of overlap is cheap insurance.
+Once calls and texts arrive on the eSIM, call **480-366-3550** to remove it.
+Cancelling early loses the number permanently. At $13.79/month, one month of
+overlap is cheap insurance.
 
 ---
 
-## A2P 10DLC runs in parallel, and starts now
+## Track B: app numbers on Twilio
 
-Texting from the number requires A2P 10DLC registration. This is a US carrier
-mandate, not a Twilio or GoDaddy policy — it is the same requirement that made
-SmartLine start demanding business details.
+Unaffected by any of the above, and can proceed in parallel.
 
-The escape hatch is the **Sole Proprietor** brand, for individuals with no EIN:
+App numbers are bought from Twilio directly — no porting, no CSR, no unlock.
+What they do need is A2P 10DLC registration before they can send texts, and
+that is where the LLC matters.
 
-| | |
-|---|---|
-| Needs | Name, address, email, and an OTP to a real mobile number |
-| Does not need | EIN, business name, job title, website |
-| Cost | $4 brand + $15 campaign vetting, one-time; $2/month |
-| Limit | **One phone number per campaign**, forever |
-| Throughput | Low daily caps — fine for personal use, useless for marketing |
+| | Sole Proprietor | LLC + EIN (Standard) |
+|---|---|---|
+| Phone numbers | 1, hard cap | Many, across campaigns |
+| Brands per tax ID | — | 5 |
+| Throughput | 1 msg/sec | Substantially higher |
+| Monthly | $2 | ~$11 per campaign |
 
-The OTP must go to a **mobile** number. A VoIP or Twilio number is rejected, so
-verification uses the owner's Mint line.
+A number per project is structurally impossible on a Sole Proprietor brand, so
+the LLC is the enabling decision, not a nicety. Twilio also blocks holders of an
+EIN from registering as Sole Proprietor at all, so the two are mutually
+exclusive and the LLC has to come first.
 
-**Registration is a console flow, not an API call.** Twilio publishes a full
-A2P registration API, but only for ISVs registering on behalf of their
-customers. A direct customer registering their own Sole Proprietor brand is
-routed to the Console tool and the final submit is not exposed over the API —
-the same shape as the Trust Hub trap from the Mint Voicemail build, where
-everything except the last click was scriptable.
+**Two timing traps.** Brand vetting checks the EIN against public business
+records, so a freshly filed LLC and a same-day EIN can fail vetting simply by
+not having propagated yet. Register the brand once the Illinois filing is
+visible in state records, and expect the EIN to need a few days. Register the
+brand name **exactly** as the LLC's registered legal name — a near-miss fails
+vetting.
 
-The click path, in order:
+Registration itself is a console flow, not an API call, for direct customers:
 
-1. **Console → Messaging → Regulatory Compliance → A2P 10DLC → Start.**
-2. Create a **Starter Customer Profile.** Choose the *individual* profile, not
-   the business one — the business form demands a job position and an EIN that
-   a personal line does not have. This is the same fork that cost time on the
-   voicemail build.
-3. Register the **brand**, brand type Sole Proprietor. Name, address, email,
-   and a mobile number for the OTP.
-4. **Enter the OTP.** It is texted to the mobile number given. The brand sits
-   in `PENDING` until this is done, with no prompt — this is the step people
-   miss.
-5. Create a **Messaging Service**, then register a **campaign** against it.
-6. Attach the phone number to the Messaging Service.
+1. Console → Messaging → Regulatory Compliance → A2P 10DLC.
+2. Create the Customer Profile using the **business** profile this time, with
+   the EIN. (The individual profile is the Sole Proprietor path and is now the
+   wrong one.)
+3. Register the brand as **Standard**, legal name matching the LLC exactly.
+4. Create a Messaging Service, register a campaign against it.
+5. Attach numbers to the Messaging Service.
 
 Then poll from here rather than refreshing the console for days:
 
@@ -195,51 +209,26 @@ Then poll from here rather than refreshing the console for days:
 npm run a2p:status
 ```
 
-**Register against a throwaway Twilio number first.** Registration takes days
-and can be rejected. Finding that out on a $1.15 test number is free; finding it
-out after the port means the ported number sits there unable to text. Once
-approved and proven, the campaign's one number slot is moved to the real number.
+For any number that later needs porting *into* Twilio rather than buying fresh:
 
-Sequenced against the port, that gives:
-
-```
-week 0   Twilio porting question      A2P brand + campaign on test number
-week 1   GoDaddy unlock                A2P approval expected
-week 2   submit port + sign LOA        texting proven on test number
-week 3   port completes                move campaign to the ported number
-week 4   confirm, then cancel GoDaddy
+```bash
+npm run port:check     # portability, free and read-only
+npm run port:submit    # upload proof, create request, email the LOA
+npm run port:status
 ```
 
 ---
 
-## What the port form needs
+## Costs after the split
 
-Collected in `port-info.json`, which is gitignored. Fill it from the sources
-named — never retype from memory, because a single transposed digit is a
-rejection and another week.
-
-| Field | Source |
+| | |
 |---|---|
-| Phone number | +18152870166 |
-| Customer type | Individual |
-| Customer name | The CSR value, pending Twilio's answer in Step 1 |
-| Service address | The CSR value, pending Twilio's answer in Step 1 |
-| Account number | GoDaddy customer number, on every renewal receipt |
-| PIN | Gmail: "Conversations Port Out Request Complete", 8 May 2025 |
-| Authorized rep | Account holder's name and Gmail address |
-| Proof document | Most recent GoDaddy renewal receipt showing the number |
+| US Mobile, 815 line | ~$10–25/mo depending on plan |
+| GoDaddy Conversations | $0 — cancelled after the port |
+| Twilio number, per app | $1.15/mo |
+| A2P campaign | ~$11/mo, shared across app numbers |
+| Illinois LLC | ~$150 to form, $75/yr |
 
-Useful reference points, all from the owner's Gmail:
-
-- **Current bill:** Conversations Deluxe, $12.99 + $0.80 regulatory fee =
-  $13.79/month, renewing on the 16th–18th, billed via PayPal.
-- **Losing carrier contact:** `portout@vms.godaddy.com` for unlocks,
-  480-366-3550 for cancellation.
-- **Prior attempt:** Mint ticket L2403307, abandoned.
-
-## What this replaces
-
-$13.79/month today. Roughly $3.15/month fixed on SecondLine — $1.15 for the
-number, $2 for the A2P campaign — plus about a cent per message and two cents
-per call minute. Break-even against the one-time $19 of A2P fees lands inside
-the second month.
+The 815 line lands roughly where SmartLine was, and buys group texting,
+iMessage, RCS, and a second network. The app numbers carry their own cost and
+were never part of the $13.79.

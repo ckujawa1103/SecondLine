@@ -1,0 +1,60 @@
+name = "secondline"
+main = "src/index.js"
+compatibility_date = "2026-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+# Threads, messages, calls, voicemails, contacts, sessions, passkeys.
+[[d1_databases]]
+binding = "DB"
+database_name = "secondline"
+database_id = "PLACEHOLDER — wrangler d1 create secondline"
+
+# Voicemail audio and MMS attachments. R2 has no egress fees, so streaming
+# either back to the app costs nothing.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "secondline-media"
+
+# The React app is served by this Worker rather than GitHub Pages. That is a
+# deliberate change from Mint Voicemail: a single origin removes CORS, the
+# WebAuthn RP-ID mismatch, and the Pages environment branch rules — three of
+# the four worst traps in that project's session log — in one move.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# Nightly: expire sessions and challenges, purge aged trash.
+[triggers]
+crons = ["17 4 * * *"]
+
+[vars]
+# Bare origin, no path. WebAuthn requires exactly this form, and with the app
+# served from the Worker these three finally agree with each other.
+APP_ORIGIN = "https://secondline.<subdomain>.workers.dev"
+APP_BASE_URL = "https://secondline.<subdomain>.workers.dev"
+RP_ID = "secondline.<subdomain>.workers.dev"
+RP_NAME = "SecondLine"
+
+# Transcription: assemblyai | groq | deepgram | openai | custom
+TRANSCRIBE_PROVIDER = "assemblyai"
+TRANSCRIBE_MODEL = "universal-3-5-pro,universal-2"
+
+# Longest voicemail we will record, in seconds.
+MAX_RECORDING_SEC = "180"
+# Days a deleted voicemail or thread stays recoverable before purge.
+TRASH_RETENTION_DAYS = "30"
+
+# Secrets — `wrangler secret put <NAME>`, never in this file:
+#   TWILIO_ACCOUNT_SID     required — API calls and webhook signature checks
+#   TWILIO_AUTH_TOKEN      required — signature verification
+#   TWILIO_API_KEY         optional — revocable credential for REST calls
+#   TWILIO_API_SECRET      optional — pairs with TWILIO_API_KEY
+#   TWILIO_TWIML_APP_SID   required for the in-app dialer (Voice SDK)
+#   OWNER_EMAIL            required — the single allowlisted address
+#   SESSION_SECRET         required — random 32+ bytes, signs session tokens
+#   TRANSCRIBE_API_KEY     key for the selected provider
+#   RESEND_API_KEY         magic links
+#   RESEND_FROM            verified sender address
+#   VAPID_PUBLIC_KEY       web push
+#   VAPID_PRIVATE_KEY      web push
