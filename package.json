@@ -5,6 +5,9 @@
   "type": "module",
   "description": "A second phone line on Twilio: texts, calls, and transcribed voicemail.",
   "scripts": {
+    "number:search": "node scripts/number.mjs search",
+    "number:buy": "node scripts/number.mjs buy",
+    "number:list": "node scripts/number.mjs list",
     "port:lookup": "node scripts/port.mjs lookup",
     "port:check": "node scripts/port.mjs check",
     "port:submit": "node scripts/port.mjs submit",
