@@ -65,14 +65,14 @@ export async function notify(env, { title, body, tag, url }) {
  * directly — a project number you rarely open, or a SIM that is not currently
  * the active one in your phone.
  */
-export async function emailInboundMessage(env, { to, lineLabel, fromLabel, body, threadUrl }) {
+export async function emailInboundMessage(env, { to, lineLabel, fromLabel, body, threadUrl, routeToken }) {
   if (!env.RESEND_API_KEY) return;
   const text = body || '(no text — attachment only)';
 
   await sendViaResend(env, {
     to,
     subject: lineLabel ? `[${lineLabel}] Text from ${fromLabel}` : `Text from ${fromLabel}`,
-    text: `${fromLabel}:\n\n${text}\n\nReply: ${threadUrl}`,
+    text: `${fromLabel}:\n\n${text}\n\nReply: ${threadUrl}${routeToken ? `\n\n${routeToken}` : ''}`,
     html:
       '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:560px">' +
         `<div style="font-size:16px;font-weight:600;margin-bottom:12px">${escapeHtml(fromLabel)}</div>` +
@@ -81,7 +81,11 @@ export async function emailInboundMessage(env, { to, lineLabel, fromLabel, body,
         `<a href="${escapeHtml(threadUrl)}" style="display:inline-block;margin-top:20px;` +
           'background:#16a34a;color:#fff;padding:11px 22px;border-radius:8px;' +
           'text-decoration:none;font-weight:600">Reply</a>' +
+        (routeToken
+          ? `<div style="margin-top:18px;color:#b9c2bc;font-size:11px">${escapeHtml(routeToken)}</div>`
+          : '') +
       '</div>',
+    routeToken,
   });
 }
 
@@ -119,7 +123,7 @@ async function callAppsScript(env, payload) {
  * own Gmail. For magic links alone nothing sensitive transits: the mail says
  * "here is a sign-in link", the token is single-use and expires in 15 minutes.
  */
-async function sendViaResend(env, { subject, text, html, to }) {
+async function sendViaResend(env, { subject, text, html, to, routeToken }) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -133,6 +137,10 @@ async function sendViaResend(env, { subject, text, html, to }) {
       subject,
       text,
       html,
+      // Set for completeness and for any client that can filter on headers.
+      // Gmail cannot — it has no arbitrary-header search operator — which is
+      // why the token is also stamped into the body below.
+      ...(routeToken ? { headers: { 'X-SecondLine-Route': routeToken } } : {}),
     }),
   });
 
@@ -165,12 +173,14 @@ async function sendVoicemailEmail(env, vm) {
       transcript,
       '',
       `Listen or manage: ${appUrl}`,
+      ...(vm.routeToken ? ['', vm.routeToken] : []),
     ].join('\n'),
-    html: voicemailHtml(vm.fromLabel, vm.duration, received, transcript, appUrl),
+    html: voicemailHtml(vm.fromLabel, vm.duration, received, transcript, appUrl, vm.routeToken),
+    routeToken: vm.routeToken,
   });
 }
 
-function voicemailHtml(label, duration, received, transcript, appUrl) {
+function voicemailHtml(label, duration, received, transcript, appUrl, routeToken) {
   const esc = (s) => String(s ?? '').replace(/[<>&"]/g, (c) => (
     { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]
   ));
@@ -187,6 +197,9 @@ function voicemailHtml(label, duration, received, transcript, appUrl) {
       `<a href="${esc(appUrl)}" style="display:inline-block;margin-top:20px;background:#16a34a;` +
         'color:#fff;padding:11px 22px;border-radius:8px;text-decoration:none;font-weight:600">' +
         'Listen &amp; manage</a>' +
+      (routeToken
+        ? `<div style="margin-top:18px;color:#b9c2bc;font-size:11px">${esc(routeToken)}</div>`
+        : '') +
     '</div>';
 }
 

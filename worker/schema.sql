@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS numbers (
   -- on a busy line it is unusable. Worth turning on for a low-traffic project
   -- number you would otherwise forget to check.
   email_texts   INTEGER NOT NULL DEFAULT 0,
+  -- Random per-line string stamped on every email for this number, so a mail
+  -- rule can route the line's notifications without matching on words a real
+  -- message might contain. A label like "Quest" would forward any personal
+  -- mail that happened to mention a quest; this cannot collide with anything.
+  route_token   TEXT,
   is_active     INTEGER NOT NULL DEFAULT 1,
   created_at    INTEGER NOT NULL
 );

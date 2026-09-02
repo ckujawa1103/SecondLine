@@ -23,7 +23,7 @@ export async function handleInboundMessage(req, env, params, ctx) {
   if (!messageSid || !from || !to) return emptyTwiml();
 
   const number = await env.DB.prepare(
-    'SELECT id, e164, label, notify_email, email_texts FROM numbers WHERE e164 = ? AND is_active = 1',
+    'SELECT id, e164, label, notify_email, email_texts, route_token FROM numbers WHERE e164 = ? AND is_active = 1',
   ).bind(to).first();
 
   // A message to a number we no longer own is not an error worth failing on —
@@ -87,6 +87,7 @@ export async function handleInboundMessage(req, env, params, ctx) {
           fromLabel,
           body,
           threadUrl: `${(env.APP_BASE_URL || '').replace(/\/+$/, '')}/messages/${thread.id}`,
+          routeToken: number.route_token,
         }).catch((e) => audit(env.DB, 'email_text_failed', String(e))),
       );
     }
