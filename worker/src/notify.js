@@ -40,6 +40,23 @@ export async function notifyNewVoicemail(env, vm) {
   }
 }
 
+/**
+ * Generic push, for anything that is not a voicemail — a new text, a missed
+ * call. Push only: an email per inbound text would be unusable, and unlike a
+ * voicemail there is no transcript worth mailing.
+ *
+ * `url` is an app-relative path; the origin is filled in here so callers never
+ * have to know how the app is deployed.
+ */
+export async function notify(env, { title, body, tag, url }) {
+  try {
+    await sendPushToAll(env, { title, body, tag, url: `${appBase(env)}${url || '/'}` });
+  } catch (e) {
+    // Never let a notification failure break the path that produced it.
+    await audit(env.DB, 'notify_failed', String(e));
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Gmail, via Apps Script                                              */
 /* ------------------------------------------------------------------ */
