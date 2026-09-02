@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "secondline"
-database_id = "PLACEHOLDER — wrangler d1 create secondline"
+database_id = "27d3c85b-adbd-4b56-a1e6-398ee0fcc3bb"
 
 # Voicemail audio and MMS attachments. R2 has no egress fees, so streaming
 # either back to the app costs nothing.
@@ -31,9 +31,9 @@ crons = ["17 4 * * *"]
 [vars]
 # Bare origin, no path. WebAuthn requires exactly this form, and with the app
 # served from the Worker these three finally agree with each other.
-APP_ORIGIN = "https://secondline.<subdomain>.workers.dev"
-APP_BASE_URL = "https://secondline.<subdomain>.workers.dev"
-RP_ID = "secondline.<subdomain>.workers.dev"
+APP_ORIGIN = "https://secondline.ckujawa1103.workers.dev"
+APP_BASE_URL = "https://secondline.ckujawa1103.workers.dev"
+RP_ID = "secondline.ckujawa1103.workers.dev"
 RP_NAME = "SecondLine"
 
 # Transcription: assemblyai | groq | deepgram | openai | custom
