@@ -1,0 +1,27 @@
+{
+  "_comment": "Copy to port-info.json and fill in. That file is gitignored: this repo is public and these values let someone attempt to steal the number. Sources for every field are in docs/PORTING.md.",
+
+  "phone_number": "+18152870166",
+  "account_telephone_number": "+18152870166",
+
+  "pin": "GoDaddy port-out email, 'Conversations Port Out Request Complete'",
+  "account_number": "GoDaddy customer number, on any renewal receipt",
+
+  "customer_type": "Individual",
+  "customer_name": "MUST match the losing carrier CSR exactly, not your own name unless Twilio says otherwise",
+  "address": {
+    "street": "from the CSR",
+    "street_2": "",
+    "city": "from the CSR",
+    "state": "CA",
+    "zip": "",
+    "country": "US"
+  },
+
+  "authorized_representative": "Christopher Kujawa",
+  "authorized_representative_email": "ckujawa1103@gmail.com",
+  "notification_emails": ["ckujawa1103@gmail.com"],
+
+  "document_path": "bill.pdf",
+  "target_port_in_date": ""
+}
