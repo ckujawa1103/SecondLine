@@ -236,3 +236,29 @@ CREATE TABLE IF NOT EXISTS app_state (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+
+/* ---------- port watch ---------- */
+
+-- Numbers being watched for a carrier change.
+--
+-- A port completing is invisible from the handset when the line's eSIM is not
+-- installed: calls go to the losing carrier's own voicemail and texts queue at
+-- the carrier undelivered. But the carrier of record changes in the national
+-- database the moment the number cuts over, and a lookup sees that from
+-- anywhere. So the port is detected by polling, not by waiting for traffic.
+CREATE TABLE IF NOT EXISTS port_watch (
+  e164          TEXT PRIMARY KEY,
+  label         TEXT,
+  -- Carrier and line type at the time watching started. A change in either is
+  -- what a completed port looks like from outside.
+  start_carrier TEXT,
+  start_type    TEXT,
+  last_carrier  TEXT,
+  last_type     TEXT,
+  last_checked  INTEGER,
+  checks        INTEGER NOT NULL DEFAULT 0,
+  -- Set once the change has been reported, so it alerts once rather than hourly.
+  notified_at   INTEGER,
+  notify_email  TEXT,
+  created_at    INTEGER NOT NULL
+);

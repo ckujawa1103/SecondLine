@@ -16,7 +16,10 @@ import { handleInboundMessage, handleMessageStatus } from './messaging.js';
 import { handleVoice, handleDial, handleRecording, handleCallStatus } from './voice.js';
 import { handleAuth, purgeExpired } from './auth.js';
 import { handleApi, purgeTrash } from './api.js';
+import { checkPortWatches } from './portwatch.js';
 import { json, err, audit } from './util.js';
+
+const HOURLY_CRON = '7 * * * *';
 
 export default {
   async fetch(req, env, ctx) {
@@ -70,8 +73,12 @@ export default {
     }
   },
 
-  // Nightly housekeeping: expire sessions and challenges, purge aged trash.
+  // Two schedules share this handler. The hourly one only polls port watches,
+  // which is cheap and self-cancelling; the nightly one also expires sessions
+  // and challenges and purges aged trash.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.all([purgeExpired(env), purgeTrash(env)]));
+    const work = [checkPortWatches(env)];
+    if (event.cron !== HOURLY_CRON) work.push(purgeExpired(env), purgeTrash(env));
+    ctx.waitUntil(Promise.all(work));
   },
 };

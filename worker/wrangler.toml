@@ -24,9 +24,10 @@ directory = "../web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# Nightly: expire sessions and challenges, purge aged trash.
+# Hourly: poll port watches. Nightly: also expire sessions and purge trash.
+# Off-the-hour minutes because every cron platform is busiest at :00.
 [triggers]
-crons = ["17 4 * * *"]
+crons = ["7 * * * *", "17 4 * * *"]
 
 [vars]
 # Bare origin, no path. WebAuthn requires exactly this form, and with the app
