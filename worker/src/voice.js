@@ -29,6 +29,8 @@ export async function handleVoice(req, env, params) {
     return twiml('<Response><Say voice="Polly.Joanna-Neural">This number is not in service.</Say><Hangup/></Response>');
   }
 
+  const rule = await matchGreetingRule(env, number.id, from);
+
   if (callSid) {
     await env.DB.prepare(
       `INSERT INTO calls
@@ -48,7 +50,9 @@ export async function handleVoice(req, env, params) {
   // With a forwarding target, ring it first and only record if it goes
   // unanswered. <Dial action=...> continues to the action URL whether the call
   // was answered or not, so voicemail is decided there rather than guessed.
-  if (number.forward_to) {
+  // A matched rule that skips forwarding answers immediately: the greeting is
+  // the whole point of the call, and ringing a phone first would pre-empt it.
+  if (number.forward_to && !(rule && rule.skip_forward)) {
     const timeout = clampInt(number.forward_timeout_sec, 5, 60, 20);
     return twiml(
       `<Response>` +
@@ -60,7 +64,28 @@ export async function handleVoice(req, env, params) {
     );
   }
 
-  return twiml(`<Response>${voicemailTwiml(env, number, base)}</Response>`);
+  return twiml(`<Response>${voicemailTwiml(env, number, base, rule)}</Response>`);
+}
+
+/**
+ * The greeting for this caller on this line, or null for the usual one.
+ *
+ * A rule with a season beats an open-ended one for the same caller, so a
+ * December bit can sit on top of a year-round greeting without either having
+ * to be deleted and rebuilt each year.
+ */
+async function matchGreetingRule(env, numberId, from) {
+  if (!from || from === 'unknown') return null;
+  const at = now();
+  return env.DB.prepare(
+    `SELECT id, greeting_mode, greeting_text, greeting_key, skip_forward
+       FROM greeting_rules
+      WHERE number_id = ?1 AND caller_number = ?2 AND is_active = 1
+        AND (starts_at IS NULL OR starts_at <= ?3)
+        AND (ends_at   IS NULL OR ends_at   >= ?3)
+      ORDER BY (starts_at IS NOT NULL OR ends_at IS NOT NULL) DESC, created_at DESC
+      LIMIT 1`,
+  ).bind(numberId, from, at).first();
 }
 
 /**
@@ -90,16 +115,27 @@ export async function handleDial(req, env, params) {
   ).bind(to).first();
 
   if (!number) return twiml('<Response><Hangup/></Response>');
-  return twiml(`<Response>${voicemailTwiml(env, number, base)}</Response>`);
+
+  // Re-matched rather than carried across the leg: Twilio round-trips through
+  // the caller's browser-less phone, not our state, so there is nothing to
+  // carry. A rule that reaches here is one that chose to ring first.
+  const rule = await matchGreetingRule(env, number.id, params.get('From'));
+  return twiml(`<Response>${voicemailTwiml(env, number, base, rule)}</Response>`);
 }
 
-function voicemailTwiml(env, number, base) {
-  // A recorded greeting wins over text-to-speech. Driven by a column rather
-  // than an R2 lookup so the call path stays fast — a caller is waiting.
-  const greeting = number.greeting_mode === 'audio' && number.greeting_key
-    ? `<Play>${base}/api/greeting/${encodeURIComponent(number.id)}</Play>`
+function voicemailTwiml(env, number, base, rule) {
+  // A per-caller rule wins over the line's own greeting; within either, a
+  // recording wins over text-to-speech. Driven by columns rather than an R2
+  // lookup so the call path stays fast — a caller is waiting.
+  const source = rule || number;
+  const greetingUrl = rule
+    ? `${base}/api/greeting/rule/${encodeURIComponent(rule.id)}`
+    : `${base}/api/greeting/${encodeURIComponent(number.id)}`;
+
+  const greeting = source.greeting_mode === 'audio' && source.greeting_key
+    ? `<Play>${greetingUrl}</Play>`
     : `<Say voice="Polly.Joanna-Neural">${escapeXml(
-        number.greeting_text || "Please leave a message after the tone.",
+        source.greeting_text || "Please leave a message after the tone.",
       )}</Say>`;
 
   const maxLength = clampInt(env.MAX_RECORDING_SEC, 30, 600, 180);

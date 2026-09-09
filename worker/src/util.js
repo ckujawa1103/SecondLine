@@ -158,3 +158,20 @@ export function clampInt(value, min, max, fallback) {
   if (Number.isNaN(n)) return fallback;
   return Math.min(max, Math.max(min, n));
 }
+
+/**
+ * Best-effort E.164 for a number typed by a human.
+ *
+ * Caller matching compares strings, so "815-287-0166" and "+18152870166" have
+ * to become the same thing before they reach the database. Anything that is
+ * not recognisably a US number is passed through untouched rather than
+ * mangled — a mangled number silently never matches.
+ */
+export function toE164(input) {
+  if (!input) return null;
+  const trimmed = String(input).trim();
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return trimmed.startsWith('+') ? trimmed : null;
+}

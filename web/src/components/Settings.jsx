@@ -232,6 +232,205 @@ function EditLine({ line, onDone }) {
           {busy ? 'Saving…' : 'Save'}
         </button>
       </form>
+
+      <CallerGreetings lineId={line.id} />
     </div>
+  );
+}
+
+/**
+ * Per-caller greetings for one line.
+ *
+ * The line's own greeting answers everyone; a rule here answers one number
+ * differently. Caller ID is all it matches on, which is plenty for a family
+ * bit and not something to lean on for anything that matters.
+ */
+function CallerGreetings({ lineId }) {
+  const [rules, setRules] = useState([]);
+  const [adding, setAdding] = useState(false);
+
+  const load = () =>
+    api.greetingRules()
+      .then((r) => setRules((r.rules || []).filter((x) => x.number_id === lineId)))
+      .catch(() => setRules([]));
+
+  useEffect(() => { load(); }, [lineId]);
+
+  const remove = async (id) => {
+    if (!confirm('Delete this greeting? The recording goes with it.')) return;
+    await api.deleteGreetingRule(id);
+    load();
+  };
+
+  const toggle = async (rule) => {
+    await api.updateGreetingRule(rule.id, { is_active: rule.is_active ? 0 : 1 });
+    load();
+  };
+
+  return (
+    <section className="section">
+      <h2>Greetings for specific callers</h2>
+
+      {!rules.length && !adding && (
+        <p className="hint">
+          Everyone hears this line's greeting. Add a rule to answer one number
+          with something else.
+        </p>
+      )}
+
+      <ul className="list">
+        {rules.map((r) => (
+          <li key={r.id}>
+            <div className="row-btn static">
+              <div className="row-main">
+                <div className="row-title">
+                  {r.label || 'Custom greeting'}
+                  {!r.is_active && <span className="tag">Off</span>}
+                  {r.greeting_mode === 'audio' && <span className="tag">Recorded</span>}
+                </div>
+                <div className="row-sub">
+                  when {formatPhone(r.caller_number)} calls
+                  {season(r) && ` · ${season(r)}`}
+                </div>
+                {r.greeting_mode === 'tts' && r.greeting_text && (
+                  <div className="row-sub small muted">“{r.greeting_text}”</div>
+                )}
+                {r.greeting_mode === 'tts' && !r.greeting_text && (
+                  <div className="row-sub small muted">
+                    No greeting set yet — record one and assign it from Voicemail.
+                  </div>
+                )}
+              </div>
+              <div className="row-meta">
+                <button className="link" onClick={() => toggle(r)}>
+                  {r.is_active ? 'Turn off' : 'Turn on'}
+                </button>
+                <button className="link danger" onClick={() => remove(r.id)}>Delete</button>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {adding ? (
+        <AddRule
+          lineId={lineId}
+          onDone={() => { setAdding(false); load(); }}
+          onCancel={() => setAdding(false)}
+        />
+      ) : (
+        <button className="btn small" onClick={() => setAdding(true)}>Add a caller</button>
+      )}
+    </section>
+  );
+}
+
+/** "Dec 1 – Dec 26", or nothing when the rule runs year-round. */
+function season(r) {
+  const d = (t) =>
+    new Date(t * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (r.starts_at && r.ends_at) return `${d(r.starts_at)} – ${d(r.ends_at)}`;
+  if (r.starts_at) return `from ${d(r.starts_at)}`;
+  if (r.ends_at) return `until ${d(r.ends_at)}`;
+  return null;
+}
+
+function AddRule({ lineId, onDone, onCancel }) {
+  const [form, setForm] = useState({
+    caller_number: '', label: '', greeting_text: '', starts_at: '', ends_at: '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  // A date input gives a local calendar day; the end of the season means the
+  // end of that day, not midnight at its start, or the last day would be dead.
+  const epoch = (value, endOfDay) => {
+    if (!value) return null;
+    const [y, m, d] = value.split('-').map(Number);
+    const date = endOfDay
+      ? new Date(y, m - 1, d, 23, 59, 59)
+      : new Date(y, m - 1, d, 0, 0, 0);
+    return Math.floor(date.getTime() / 1000);
+  };
+
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.createGreetingRule({
+        number_id: lineId,
+        caller_number: form.caller_number,
+        label: form.label.trim() || null,
+        greeting_text: form.greeting_text.trim() || null,
+        starts_at: epoch(form.starts_at, false),
+        ends_at: epoch(form.ends_at, true),
+      });
+      onDone();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="form inset" onSubmit={save}>
+      <label>
+        When this number calls
+        <input
+          value={form.caller_number}
+          onChange={set('caller_number')}
+          placeholder="(555) 123-4567"
+          inputMode="tel"
+          required
+        />
+      </label>
+
+      <label>
+        Name it
+        <input value={form.label} onChange={set('label')} placeholder="Santa's Hotline" />
+      </label>
+
+      <label>
+        Say this
+        <textarea
+          rows={3}
+          value={form.greeting_text}
+          onChange={set('greeting_text')}
+          placeholder="Ho ho ho! You've reached the North Pole…"
+        />
+        <span className="hint">
+          Text-to-speech, and a fine placeholder. For a real voice, call the
+          line and leave the greeting as a message, then open it in Voicemail
+          and tap “Use as greeting”.
+        </span>
+      </label>
+
+      <div className="row wrap">
+        <label style={{ flex: 1 }}>
+          Starts
+          <input type="date" value={form.starts_at} onChange={set('starts_at')} />
+        </label>
+        <label style={{ flex: 1 }}>
+          Ends
+          <input type="date" value={form.ends_at} onChange={set('ends_at')} />
+        </label>
+      </div>
+      <span className="hint">
+        Optional. Outside these dates the caller hears the line's normal
+        greeting — which beats remembering to switch Santa off in January.
+      </span>
+
+      {error && <p className="error">{error}</p>}
+
+      <div className="row wrap">
+        <button className="btn primary" disabled={busy}>
+          {busy ? 'Saving…' : 'Add greeting'}
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
   );
 }

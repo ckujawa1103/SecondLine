@@ -3,7 +3,7 @@
 
 import {
   now, randomToken, audit, json, err, clampInt,
-  b64urlEncode, timingSafeEqual,
+  b64urlEncode, timingSafeEqual, toE164,
 } from './util.js';
 import { requireSession } from './auth.js';
 import { sendMessage } from './messaging.js';
@@ -22,9 +22,14 @@ export async function handleApi(req, env, path, ctx) {
   // Outgoing greeting. Deliberately unauthenticated: Twilio fetches this
   // anonymously while a caller is on the line, and it is the message every
   // caller already hears.
+  const ruleGreetingMatch = /^\/api\/greeting\/rule\/([\w-]+)$/.exec(path);
+  if (ruleGreetingMatch && req.method === 'GET') {
+    return streamGreeting(env, ruleGreetingMatch[1], 'greeting_rules');
+  }
+
   const greetingMatch = /^\/api\/greeting\/([\w-]+)$/.exec(path);
   if (greetingMatch && req.method === 'GET') {
-    return streamGreeting(env, greetingMatch[1]);
+    return streamGreeting(env, greetingMatch[1], 'numbers');
   }
 
   // Second leg of the callback bridge. Twilio POSTs here when you pick up, and
@@ -100,6 +105,80 @@ export async function handleApi(req, env, path, ctx) {
     binds.push(id);
     await env.DB.prepare(`UPDATE numbers SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
     await audit(env.DB, 'number_updated', { id, fields: Object.keys(patch) }, req);
+    return json({ ok: true });
+  }
+
+  /* ---- per-caller greetings ---- */
+
+  if (path === '/api/greeting-rules' && req.method === 'GET') {
+    const rows = await env.DB.prepare(
+      `SELECT id, number_id, caller_number, label, greeting_mode, greeting_text,
+              greeting_key, skip_forward, starts_at, ends_at, is_active, created_at
+         FROM greeting_rules
+        ORDER BY created_at DESC`,
+    ).all();
+    return json({ rules: rows.results || [] });
+  }
+
+  if (path === '/api/greeting-rules' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({}));
+    const caller = toE164(body.caller_number);
+    if (!body.number_id) return err('number_id is required', 400);
+    if (!caller) return err('A valid caller number is required', 400);
+
+    const id = randomToken(12);
+    await env.DB.prepare(
+      `INSERT INTO greeting_rules
+         (id, number_id, caller_number, label, greeting_mode, greeting_text,
+          skip_forward, starts_at, ends_at, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+    ).bind(
+      id, body.number_id, caller, body.label || null,
+      body.greeting_mode === 'audio' ? 'audio' : 'tts',
+      body.greeting_text || null,
+      body.skip_forward === 0 ? 0 : 1,
+      body.starts_at ?? null, body.ends_at ?? null, now(),
+    ).run();
+
+    await audit(env.DB, 'greeting_rule_created', { id, caller }, req);
+    return json({ id });
+  }
+
+  const ruleMatch = /^\/api\/greeting-rules\/([\w-]+)$/.exec(path);
+  if (ruleMatch && req.method === 'PATCH') {
+    const patch = await req.json().catch(() => ({}));
+    // greeting_key is set by the "use this recording" route, which copies the
+    // object first. Letting a PATCH name a key directly would point a rule at
+    // an object that may not exist, or at somebody else's.
+    const allowed = ['label', 'greeting_mode', 'greeting_text', 'skip_forward',
+                     'starts_at', 'ends_at', 'is_active'];
+    const sets = [];
+    const binds = [];
+    for (const key of allowed) {
+      if (key in patch) { sets.push(`${key} = ?`); binds.push(patch[key]); }
+    }
+    if ('caller_number' in patch) {
+      const caller = toE164(patch.caller_number);
+      if (!caller) return err('A valid caller number is required', 400);
+      sets.push('caller_number = ?');
+      binds.push(caller);
+    }
+    if (!sets.length) return err('Nothing to update', 400);
+
+    binds.push(ruleMatch[1]);
+    await env.DB.prepare(
+      `UPDATE greeting_rules SET ${sets.join(', ')} WHERE id = ?`,
+    ).bind(...binds).run();
+    return json({ ok: true });
+  }
+
+  if (ruleMatch && req.method === 'DELETE') {
+    const row = await env.DB.prepare(
+      'SELECT greeting_key FROM greeting_rules WHERE id = ?',
+    ).bind(ruleMatch[1]).first();
+    await env.DB.prepare('DELETE FROM greeting_rules WHERE id = ?').bind(ruleMatch[1]).run();
+    if (row?.greeting_key) await env.MEDIA.delete(row.greeting_key);
+    await audit(env.DB, 'greeting_rule_deleted', { id: ruleMatch[1] }, req);
     return json({ ok: true });
   }
 
@@ -318,7 +397,7 @@ export async function handleApi(req, env, path, ctx) {
     return json({ voicemails: rows.results || [] });
   }
 
-  const vmMatch = /^\/api\/voicemails\/([\w-]+)(\/[a-z]+)?$/.exec(path);
+  const vmMatch = /^\/api\/voicemails\/([\w-]+)(\/[a-z-]+)?$/.exec(path);
   if (vmMatch) {
     const id = vmMatch[1];
     const action = vmMatch[2];
@@ -347,6 +426,43 @@ export async function handleApi(req, env, path, ctx) {
     if (action === '/restore' && req.method === 'POST') {
       await env.DB.prepare('UPDATE voicemails SET deleted_at = NULL WHERE id = ?').bind(id).run();
       return json({ ok: true });
+    }
+
+    // Promote a recording to a greeting.
+    //
+    // Recording by phone is the only practical way to make one — phone audio
+    // is already the format Twilio wants, and nobody has a studio. So: call
+    // the number, leave the greeting as a message, then point a line or a
+    // caller rule at it from here.
+    //
+    // The object is copied to its own key rather than referenced in place, so
+    // deleting the voicemail (or the nightly purge reaching it) cannot silently
+    // leave a line with no greeting.
+    if (action === '/use-as-greeting' && req.method === 'POST') {
+      const { numberId, ruleId } = await req.json().catch(() => ({}));
+      const target = ruleId
+        ? { table: 'greeting_rules', id: ruleId }
+        : { table: 'numbers', id: numberId };
+      if (!target.id) return err('numberId or ruleId is required', 400);
+
+      const vm = await env.DB.prepare('SELECT r2_key FROM voicemails WHERE id = ?')
+        .bind(id).first();
+      if (!vm?.r2_key) return err('That voicemail has no audio', 404);
+
+      const source = await env.MEDIA.get(vm.r2_key);
+      if (!source) return err('That recording is no longer stored', 404);
+
+      const key = `greeting/${target.table === 'numbers' ? '' : 'rule-'}${target.id}.mp3`;
+      await env.MEDIA.put(key, source.body, {
+        httpMetadata: { contentType: 'audio/mpeg' },
+      });
+
+      await env.DB.prepare(
+        `UPDATE ${target.table} SET greeting_mode = 'audio', greeting_key = ? WHERE id = ?`,
+      ).bind(key, target.id).run();
+
+      await audit(env.DB, 'greeting_recorded', { from: id, ...target }, req);
+      return json({ ok: true, key });
     }
   }
 
@@ -544,10 +660,12 @@ async function streamVoicemail(req, env, id, token) {
   return new Response(object.body, { headers });
 }
 
-async function streamGreeting(env, numberId) {
+// `table` is chosen by the route, never by the request, so interpolating it
+// into the SQL cannot be reached by anything a caller controls.
+async function streamGreeting(env, id, table) {
   const row = await env.DB.prepare(
-    'SELECT greeting_key FROM numbers WHERE id = ?',
-  ).bind(numberId).first();
+    `SELECT greeting_key FROM ${table} WHERE id = ?`,
+  ).bind(id).first();
   if (!row?.greeting_key) return new Response('No greeting', { status: 404 });
 
   const object = await env.MEDIA.get(row.greeting_key);

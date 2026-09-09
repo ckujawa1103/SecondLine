@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, formatPhone, formatWhen, formatDuration } from '../api.js';
 
 export default function Voicemail({ lineId }) {
+  const [greetingFor, setGreetingFor] = useState(null);
   const [items, setItems] = useState([]);
   const [trash, setTrash] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -132,13 +133,89 @@ export default function Voicemail({ lineId }) {
                         Restore
                       </button>
                     )}
+
+                    <button className="btn small" onClick={() => setGreetingFor(v.id)}>
+                      Use as greeting
+                    </button>
                   </div>
+
+                  {greetingFor === v.id && (
+                    <GreetingPicker
+                      voicemailId={v.id}
+                      onDone={() => setGreetingFor(null)}
+                    />
+                  )}
                 </div>
               )}
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Assign a recording to a line or to one of its per-caller rules.
+ *
+ * Recording by phone is the only practical way to make a greeting, so the
+ * inbox is where greetings come from. Everything on this list is somewhere a
+ * recording can land.
+ */
+function GreetingPicker({ voicemailId, onDone }) {
+  const [targets, setTargets] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    Promise.all([api.numbers(), api.greetingRules()])
+      .then(([n, r]) => {
+        const lines = (n.numbers || []).map((x) => ({
+          key: `n:${x.id}`,
+          body: { numberId: x.id },
+          name: `${x.label || formatPhone(x.serves_number || x.e164)} — main greeting`,
+        }));
+        const rules = (r.rules || []).map((x) => ({
+          key: `r:${x.id}`,
+          body: { ruleId: x.id },
+          name: `${x.label || 'Custom'} — when ${formatPhone(x.caller_number)} calls`,
+        }));
+        setTargets([...lines, ...rules]);
+      })
+      .catch((e) => setError(e.message));
+  }, []);
+
+  const assign = async (target) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.useAsGreeting(voicemailId, target.body);
+      onDone();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  if (error) return <p className="error">{error}</p>;
+  if (!targets) return <p className="muted small">Loading…</p>;
+
+  return (
+    <div className="picker">
+      <p className="muted small">Use this recording as:</p>
+      <div className="row wrap">
+        {targets.map((t) => (
+          <button
+            key={t.key}
+            className="btn small"
+            disabled={busy}
+            onClick={() => assign(t)}
+          >
+            {t.name}
+          </button>
+        ))}
+        <button className="btn small" onClick={onDone}>Cancel</button>
+      </div>
     </div>
   );
 }

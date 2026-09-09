@@ -268,3 +268,32 @@ CREATE TABLE IF NOT EXISTS port_watch (
   notify_email  TEXT,
   created_at    INTEGER NOT NULL
 );
+
+-- Per-caller greetings. One line can answer different callers with different
+-- greetings: a themed one for the people in on the joke, the normal one for
+-- everyone else.
+--
+-- Matched on the calling number, so it is only as trustworthy as caller ID —
+-- fine for a family bit, not a security control. Nothing here changes who can
+-- reach the line or what is recorded; it swaps the audio and nothing else.
+CREATE TABLE IF NOT EXISTS greeting_rules (
+  id            TEXT PRIMARY KEY,
+  number_id     TEXT NOT NULL,
+  caller_number TEXT NOT NULL,           -- E.164 of the person calling in
+  label         TEXT,                    -- "Santa's Hotline"
+  greeting_mode TEXT NOT NULL DEFAULT 'tts',   -- tts | audio
+  greeting_text TEXT,
+  greeting_key  TEXT,                    -- R2 key when greeting_mode = 'audio'
+  -- Ringing a phone first would defeat the point of a themed greeting, so a
+  -- rule skips the forwarding leg by default.
+  skip_forward  INTEGER NOT NULL DEFAULT 1,
+  -- Optional season (unix seconds). A Santa greeting that answers in July is
+  -- a bug, and remembering to switch it off by hand is how that happens.
+  starts_at     INTEGER,
+  ends_at       INTEGER,
+  is_active     INTEGER NOT NULL DEFAULT 1,
+  created_at    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rule_lookup
+  ON greeting_rules (number_id, caller_number, is_active);

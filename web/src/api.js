@@ -103,6 +103,17 @@ export const api = {
   updateVoicemail: (id, patch) => request(`/api/voicemails/${id}`, { method: 'PATCH', body: patch }),
   deleteVoicemail: (id) => request(`/api/voicemails/${id}`, { method: 'DELETE' }),
   restoreVoicemail: (id) => request(`/api/voicemails/${id}/restore`, { method: 'POST', body: {} }),
+  useAsGreeting: (id, target) =>
+    request(`/api/voicemails/${id}/use-as-greeting`, { method: 'POST', body: target }),
+
+  /* per-caller greetings */
+  greetingRules: () => request('/api/greeting-rules'),
+  createGreetingRule: (rule) =>
+    request('/api/greeting-rules', { method: 'POST', body: rule }),
+  updateGreetingRule: (id, patch) =>
+    request(`/api/greeting-rules/${id}`, { method: 'PATCH', body: patch }),
+  deleteGreetingRule: (id) =>
+    request(`/api/greeting-rules/${id}`, { method: 'DELETE' }),
 
   /* contacts */
   contacts: () => request('/api/contacts'),
