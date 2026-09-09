@@ -124,7 +124,35 @@ async function callAppsScript(env, payload) {
  * "here is a sign-in link", the token is single-use and expires in 15 minutes.
  */
 async function sendViaResend(env, { subject, text, html, to, routeToken }) {
-  const res = await fetch('https://api.resend.com/emails', {
+  const recipient = to || env.OWNER_EMAIL;
+  const res = await postResend(env, { recipient, subject, text, html, routeToken });
+  if (res.ok) return;
+
+  const detail = (await res.text()).slice(0, 300);
+
+  // Resend refuses any recipient but the account owner until a sending domain
+  // is verified. Losing a transcript to that would be the worst outcome, so
+  // fall back to the owner address and say who it was meant for. Only for that
+  // specific rejection — anything else is a real failure and should surface.
+  const recipientRejected =
+    res.status === 403 && /only send testing emails/i.test(detail) && recipient !== env.OWNER_EMAIL;
+
+  if (!recipientRejected) throw new Error(`resend ${res.status}: ${detail}`);
+
+  await audit(env.DB, 'resend_recipient_rejected', { intended: recipient });
+
+  const retry = await postResend(env, {
+    recipient: env.OWNER_EMAIL,
+    subject: `[for ${recipient}] ${subject}`,
+    text: `Intended for ${recipient}, delivered here because Resend has no verified sending domain yet.\n\n${text}`,
+    html,
+    routeToken,
+  });
+  if (!retry.ok) throw new Error(`resend fallback ${retry.status}: ${(await retry.text()).slice(0, 200)}`);
+}
+
+function postResend(env, { recipient, subject, text, html, routeToken }) {
+  return fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -132,8 +160,7 @@ async function sendViaResend(env, { subject, text, html, to, routeToken }) {
     },
     body: JSON.stringify({
       from: env.RESEND_FROM || 'Voicemail <onboarding@resend.dev>',
-      // Per-line recipient when the caller supplied one, else the account owner.
-      to: [to || env.OWNER_EMAIL],
+      to: [recipient],
       subject,
       text,
       html,
@@ -143,8 +170,6 @@ async function sendViaResend(env, { subject, text, html, to, routeToken }) {
       ...(routeToken ? { headers: { 'X-SecondLine-Route': routeToken } } : {}),
     }),
   });
-
-  if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
 /** True when some email transport is configured. */
@@ -168,7 +193,9 @@ async function sendVoicemailEmail(env, vm) {
       ? `[${vm.lineLabel}] Voicemail from ${vm.fromLabel}`
       : `Voicemail from ${vm.fromLabel}`,
     text: [
-      `${vm.fromLabel} left you a ${formatDuration(vm.duration)} voicemail.`,
+      vm.servesNumber
+        ? `${vm.fromLabel} left a ${formatDuration(vm.duration)} voicemail on ${formatPhone(vm.servesNumber)}.`
+        : `${vm.fromLabel} left you a ${formatDuration(vm.duration)} voicemail.`,
       '',
       transcript,
       '',

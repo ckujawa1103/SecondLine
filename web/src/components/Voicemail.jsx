@@ -72,6 +72,13 @@ export default function Voicemail({ lineId }) {
                 <div className="row-meta">
                   <div>{formatWhen(v.created_at)}</div>
                   <div className="tag">{formatDuration(v.duration_sec)}</div>
+                  {/* Which line took the call. Named by the number people
+                      actually dial, not the catcher it forwards to. */}
+                  {(v.number_label || v.serves_number) && (
+                    <div className="tag line">
+                      {v.number_label || formatPhone(v.serves_number)}
+                    </div>
+                  )}
                 </div>
               </button>
 
@@ -79,6 +86,12 @@ export default function Voicemail({ lineId }) {
                 <div className="detail">
                   {/* Signed, time-limited URL — <audio> cannot send a bearer header. */}
                   <audio controls preload="none" src={v.audioUrl} className="player" />
+
+                  {v.serves_number && (
+                    <p className="muted small">
+                      Left on {formatPhone(v.serves_number)}
+                    </p>
+                  )}
 
                   {v.transcript && <p className="transcript">{v.transcript}</p>}
 

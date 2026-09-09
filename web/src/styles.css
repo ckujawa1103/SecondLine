@@ -176,6 +176,8 @@ body {
   color: var(--muted);
 }
 
+.tag.line { border-color: var(--accent); color: var(--accent); }
+
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 
 /* ---------- voicemail detail ---------- */

@@ -49,7 +49,9 @@ export default function Settings({ numbers, onChanged, onSignOut }) {
                 <div className="row-main">
                   <div className="row-title">{n.label || formatPhone(n.e164)}</div>
                   <div className="row-sub">
-                    {formatPhone(n.e164)}
+                    {n.serves_number
+                      ? `voicemail for ${formatPhone(n.serves_number)}`
+                      : formatPhone(n.e164)}
                     {n.forward_to ? ` · rings ${formatPhone(n.forward_to)}` : ' · straight to voicemail'}
                   </div>
                   <div className="row-sub muted small">
@@ -108,6 +110,7 @@ export default function Settings({ numbers, onChanged, onSignOut }) {
 function EditLine({ line, onDone }) {
   const [form, setForm] = useState({
     label: line.label || '',
+    serves_number: line.serves_number || '',
     forward_to: line.forward_to || '',
     forward_timeout_sec: line.forward_timeout_sec ?? 20,
     greeting_text: line.greeting_text || '',
@@ -129,6 +132,7 @@ function EditLine({ line, onDone }) {
     try {
       await api.updateNumber(line.id, {
         ...form,
+        serves_number: form.serves_number.trim() || null,
         forward_to: form.forward_to.trim() || null,
         notify_email: form.notify_email.trim() || null,
         forward_timeout_sec: parseInt(form.forward_timeout_sec, 10) || 20,
@@ -152,6 +156,20 @@ function EditLine({ line, onDone }) {
           Label
           <input value={form.label} onChange={set('label')} placeholder="Quest" />
           <span className="hint">Prefixes email subjects, so a shared inbox stays readable.</span>
+        </label>
+
+        <label>
+          Voicemail for
+          <input
+            value={form.serves_number}
+            onChange={set('serves_number')}
+            placeholder="The number callers actually dial"
+            inputMode="tel"
+          />
+          <span className="hint">
+            Set this when the line is a catcher reached by conditional forwarding.
+            The app and the emails name this number instead of the Twilio one.
+          </span>
         </label>
 
         <label>

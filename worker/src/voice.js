@@ -207,7 +207,7 @@ async function ingestRecording(env, { callSid, recordingSid, recordingUrl, durat
     // personal line and a business line route to different inboxes, so the
     // recipient is a property of the number, not of the account.
     const line = await env.DB.prepare(
-      'SELECT label, notify_email, route_token FROM numbers WHERE id = ?',
+      'SELECT label, notify_email, route_token, serves_number FROM numbers WHERE id = ?',
     ).bind(call.number_id).first();
 
     await notifyNewVoicemail(env, {
@@ -219,6 +219,7 @@ async function ingestRecording(env, { callSid, recordingSid, recordingUrl, durat
       notifyEmail: line?.notify_email || null,
       lineLabel: line?.label || null,
       routeToken: line?.route_token || null,
+      servesNumber: line?.serves_number || null,
     });
   } catch (e) {
     await audit(env.DB, 'ingest_failed', { callSid, error: String(e) });

@@ -69,7 +69,8 @@ export async function handleApi(req, env, path, ctx) {
     const rows = await env.DB.prepare(
       `SELECT n.id, n.e164, n.label, n.forward_to, n.forward_timeout_sec,
               n.greeting_mode, n.greeting_text, n.messaging_service_sid,
-              n.campaign_sid, n.is_active,
+              n.campaign_sid, n.is_active, n.serves_number, n.notify_email,
+              n.email_texts,
               (SELECT COUNT(*) FROM threads t
                 WHERE t.number_id = n.id AND t.unread_count > 0) AS unread_threads
          FROM numbers n
@@ -87,7 +88,8 @@ export async function handleApi(req, env, path, ctx) {
     // campaign_sid, which would silently point a line at another account's
     // number or another brand's campaign.
     const allowed = ['label', 'forward_to', 'forward_timeout_sec', 'greeting_mode',
-                     'greeting_text', 'is_active'];
+                     'greeting_text', 'is_active', 'serves_number', 'notify_email',
+                     'email_texts'];
     const sets = [];
     const binds = [];
     for (const key of allowed) {
@@ -292,7 +294,8 @@ export async function handleApi(req, env, path, ctx) {
     const rows = await env.DB.prepare(
       `SELECT v.id, v.number_id, v.from_number, v.duration_sec, v.transcript,
               v.transcript_status, v.transcript_confidence, v.is_read, v.is_saved,
-              v.created_at, c.name AS contact_name, n.e164 AS number_e164
+              v.created_at, c.name AS contact_name, n.e164 AS number_e164,
+              n.label AS number_label, n.serves_number
          FROM voicemails v
          LEFT JOIN contacts c ON c.id = v.contact_id
          JOIN numbers n ON n.id = v.number_id

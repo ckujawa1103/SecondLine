@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS numbers (
   -- on a busy line it is unusable. Worth turning on for a low-traffic project
   -- number you would otherwise forget to check.
   email_texts   INTEGER NOT NULL DEFAULT 0,
+  -- The real-world number whose calls land here, when this Twilio number is
+  -- only a voicemail catcher reached by conditional forwarding. Callers dial
+  -- serves_number; e164 is plumbing nobody sees. The UI and the emails name
+  -- serves_number, because "voicemail for the number you gave people" is the
+  -- fact that matters and the catcher number would just be confusing.
+  serves_number TEXT,
   -- Random per-line string stamped on every email for this number, so a mail
   -- rule can route the line's notifications without matching on words a real
   -- message might contain. A label like "Quest" would forward any personal
