@@ -87,13 +87,19 @@ export const api = {
   updateThread: (id, patch) => request(`/api/threads/${id}`, { method: 'PATCH', body: patch }),
 
   /* calls */
-  calls: () => request('/api/calls'),
+  calls: ({ numberId } = {}) =>
+    request(`/api/calls${numberId ? `?numberId=${encodeURIComponent(numberId)}` : ''}`),
   bridgeCall: (numberId, to, bridgeTo) =>
     request('/api/calls/bridge', { method: 'POST', body: { numberId, to, bridgeTo } }),
   voiceToken: () => request('/api/voice/token', { method: 'POST', body: {} }),
 
   /* voicemail */
-  voicemails: (trash = false) => request(`/api/voicemails${trash ? '?trash=1' : ''}`),
+  voicemails: ({ trash, numberId } = {}) => {
+    const p = new URLSearchParams();
+    if (trash) p.set('trash', '1');
+    if (numberId) p.set('numberId', numberId);
+    return request(`/api/voicemails?${p}`);
+  },
   updateVoicemail: (id, patch) => request(`/api/voicemails/${id}`, { method: 'PATCH', body: patch }),
   deleteVoicemail: (id) => request(`/api/voicemails/${id}`, { method: 'DELETE' }),
   restoreVoicemail: (id) => request(`/api/voicemails/${id}/restore`, { method: 'POST', body: {} }),

@@ -17,15 +17,16 @@ export default function Calls({ lineId, numbers }) {
 
   const load = () => {
     setLoading(true);
-    api.calls()
+    api.calls({ numberId: lineId })
       .then((r) => setCalls(r.calls || []))
       .catch(() => setCalls([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  // Filtered in the query for the same reason as voicemail: LIMIT runs first.
+  useEffect(load, [lineId]);
 
-  const shown = lineId ? calls.filter((c) => c.number_id === lineId) : calls;
+  const shown = calls;
 
   if (dialing) {
     return (
@@ -70,6 +71,12 @@ export default function Calls({ lineId, numbers }) {
               <div className="row-meta">
                 <div>{formatWhen(c.created_at)}</div>
                 {c.voicemail_id && <div className="tag">VM</div>}
+                {/* Which line took the call, named the way callers know it. */}
+                {(c.number_label || c.serves_number) && (
+                  <div className="tag line">
+                    {c.number_label || formatPhone(c.serves_number)}
+                  </div>
+                )}
               </div>
             </div>
           </li>

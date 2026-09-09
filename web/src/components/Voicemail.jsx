@@ -9,17 +9,18 @@ export default function Voicemail({ lineId }) {
 
   const load = () => {
     setLoading(true);
-    api.voicemails(trash)
+    api.voicemails({ trash, numberId: lineId })
       .then((r) => setItems(r.voicemails || []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [trash]);
+  // The line filter is a query parameter, not a client-side filter: the API
+  // returns a capped page, so filtering after the fact would hide a quiet
+  // line's messages behind a busy one's.
+  useEffect(load, [trash, lineId]);
 
-  // Filtering here rather than in the query keeps the line picker instant —
-  // the list is small, and a round trip per toggle would feel worse.
-  const shown = lineId ? items.filter((v) => v.number_id === lineId) : items;
+  const shown = items;
 
   const act = async (fn) => { await fn(); load(); };
 

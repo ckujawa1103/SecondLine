@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, getToken, setToken } from './api.js';
+import { api, formatPhone, getToken, setToken } from './api.js';
 import Login from './components/Login.jsx';
 import Messages from './components/Messages.jsx';
 import Calls from './components/Calls.jsx';
@@ -104,7 +104,8 @@ export default function App() {
             <option value="">All lines</option>
             {numbers.map((n) => (
               <option key={n.id} value={n.id}>
-                {n.label || n.e164}
+                {/* Named by the number people dial, not the catcher behind it. */}
+                {n.label || formatPhone(n.serves_number || n.e164)}
               </option>
             ))}
           </select>

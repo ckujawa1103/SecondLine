@@ -240,19 +240,25 @@ export async function handleApi(req, env, path, ctx) {
 
   if (path === '/api/calls' && req.method === 'GET') {
     const limit = clampInt(url.searchParams.get('limit'), 1, 200, 50);
+    // Filtering by line belongs in the query, not the client: LIMIT is applied
+    // first, so a busy line would otherwise fill the window and a quiet one
+    // would look empty.
+    const lineId = url.searchParams.get('numberId') || null;
     const rows = await env.DB.prepare(
       `SELECT c.id, c.number_id, c.direction, c.peer_number, c.peer_name,
               c.peer_city, c.peer_state, c.disposition, c.duration_sec,
               c.created_at, c.read_at,
               ct.name AS contact_name, n.e164 AS number_e164,
+              n.label AS number_label, n.serves_number,
               v.id AS voicemail_id
          FROM calls c
          LEFT JOIN contacts ct ON ct.id = c.contact_id
          LEFT JOIN voicemails v ON v.call_id = c.id AND v.deleted_at IS NULL
          JOIN numbers n ON n.id = c.number_id
+        WHERE (?1 IS NULL OR c.number_id = ?1)
         ORDER BY c.created_at DESC
-        LIMIT ?`,
-    ).bind(limit).all();
+        LIMIT ?2`,
+    ).bind(lineId, limit).all();
     return json({ calls: rows.results || [] });
   }
 
@@ -290,6 +296,7 @@ export async function handleApi(req, env, path, ctx) {
   if (path === '/api/voicemails' && req.method === 'GET') {
     const trash = url.searchParams.get('trash') === '1';
     const limit = clampInt(url.searchParams.get('limit'), 1, 200, 50);
+    const lineId = url.searchParams.get('numberId') || null;
 
     const rows = await env.DB.prepare(
       `SELECT v.id, v.number_id, v.from_number, v.duration_sec, v.transcript,
@@ -300,9 +307,10 @@ export async function handleApi(req, env, path, ctx) {
          LEFT JOIN contacts c ON c.id = v.contact_id
          JOIN numbers n ON n.id = v.number_id
         WHERE v.deleted_at IS ${trash ? 'NOT NULL' : 'NULL'}
+          AND (?1 IS NULL OR v.number_id = ?1)
         ORDER BY v.created_at DESC
-        LIMIT ?`,
-    ).bind(limit).all();
+        LIMIT ?2`,
+    ).bind(lineId, limit).all();
 
     for (const r of rows.results || []) {
       r.audioUrl = `/api/voicemails/${r.id}/audio?t=${await signMediaToken(env, r.id)}`;
